@@ -8,7 +8,6 @@ import { UserUtils } from '../../session/utils';
 import { syncConfigurationIfNeeded } from '../../session/utils/syncUtils';
 
 import {
-  createOrUpdateItem,
   generateAttachmentKeyIfEmpty,
   getAllOpenGroupV1Conversations,
   getItemById,

@@ -189,7 +189,7 @@ export async function handleNewClosedGroup(
     return;
   }
   const maybeConvo = getConversationController().get(groupId);
-  const expireTimer = groupUpdate.expireTimer;
+  const expireTimer = groupUpdate.expireTimer || 0;
 
   if (maybeConvo) {
     // if we did not left this group, just add the keypair we got if not already there

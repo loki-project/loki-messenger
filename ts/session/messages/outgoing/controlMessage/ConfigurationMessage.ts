@@ -141,6 +141,7 @@ export class ConfigurationMessageClosedGroup {
   public encryptionKeyPair: ECKeyPair;
   public members: Array<string>;
   public admins: Array<string>;
+  public expireTimer: number;
 
   public constructor({
     publicKey,
@@ -148,18 +149,21 @@ export class ConfigurationMessageClosedGroup {
     encryptionKeyPair,
     members,
     admins,
+    expireTimer,
   }: {
     publicKey: string;
     name: string;
     encryptionKeyPair: ECKeyPair;
     members: Array<string>;
     admins: Array<string>;
+    expireTimer: number;
   }) {
     this.publicKey = publicKey;
     this.name = name;
     this.encryptionKeyPair = encryptionKeyPair;
     this.members = members;
     this.admins = admins;
+    this.expireTimer = expireTimer;
 
     // will throw if publik key is invalid
     PubKey.cast(publicKey);
@@ -174,7 +178,9 @@ export class ConfigurationMessageClosedGroup {
     if (!this.name?.length) {
       throw new Error('name must be set');
     }
-
+    if (this.expireTimer === null || this.expireTimer === undefined) {
+      throw new Error('expireTimer must be set');
+    }
     if (!this.members?.length) {
       throw new Error('members must be set');
     }
@@ -197,6 +203,7 @@ export class ConfigurationMessageClosedGroup {
       },
       members: this.members.map(fromHexToArray),
       admins: this.admins.map(fromHexToArray),
+      expirationTimer: this.expireTimer,
     });
   }
 }

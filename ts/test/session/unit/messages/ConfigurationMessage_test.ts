@@ -78,6 +78,7 @@ describe('ConfigurationMessage', () => {
         members: [member],
         admins: [member],
         encryptionKeyPair: undefined as any,
+        expireTimer: 0,
       };
 
       expect(() => new ConfigurationMessageClosedGroup(params)).to.throw(
@@ -93,6 +94,7 @@ describe('ConfigurationMessage', () => {
         members: [member],
         admins: [member],
         encryptionKeyPair: new ECKeyPair(new Uint8Array(), new Uint8Array()),
+        expireTimer: 0,
       };
 
       expect(() => new ConfigurationMessageClosedGroup(params)).to.throw(
@@ -108,6 +110,7 @@ describe('ConfigurationMessage', () => {
         members: [member],
         admins: [member],
         encryptionKeyPair: TestUtils.generateFakeECKeyPair(),
+        expireTimer: 0,
       };
 
       expect(() => new ConfigurationMessageClosedGroup(params)).to.throw();
@@ -121,9 +124,39 @@ describe('ConfigurationMessage', () => {
         members: [member],
         admins: [member],
         encryptionKeyPair: TestUtils.generateFakeECKeyPair(),
+        expireTimer: 0,
       };
 
       expect(() => new ConfigurationMessageClosedGroup(params)).to.throw('name must be set');
+    });
+
+    it('throw if closed group has invalid expire timer (i.e. not explicitly set)', () => {
+      const member = TestUtils.generateFakePubKey().key;
+      const params = {
+        publicKey: TestUtils.generateFakePubKey().key,
+        name: 'groupname',
+        members: [member],
+        admins: [member],
+        encryptionKeyPair: TestUtils.generateFakeECKeyPair(),
+        expireTimer: undefined,
+      };
+
+      expect(() => new ConfigurationMessageClosedGroup(params as any)).to.throw(
+        'expireTimer must be set'
+      );
+
+      const params2 = {
+        publicKey: TestUtils.generateFakePubKey().key,
+        name: 'groupname',
+        members: [member],
+        admins: [member],
+        encryptionKeyPair: TestUtils.generateFakeECKeyPair(),
+        expireTimer: null,
+      };
+
+      expect(() => new ConfigurationMessageClosedGroup(params2 as any)).to.throw(
+        'expireTimer must be set'
+      );
     });
 
     it('throw if members is empty', () => {
@@ -134,6 +167,7 @@ describe('ConfigurationMessage', () => {
         members: [],
         admins: [member],
         encryptionKeyPair: TestUtils.generateFakeECKeyPair(),
+        expireTimer: 0,
       };
 
       expect(() => new ConfigurationMessageClosedGroup(params)).to.throw('members must be set');
@@ -147,6 +181,7 @@ describe('ConfigurationMessage', () => {
         members: [member],
         admins: [],
         encryptionKeyPair: TestUtils.generateFakeECKeyPair(),
+        expireTimer: 0,
       };
 
       expect(() => new ConfigurationMessageClosedGroup(params)).to.throw('admins must be set');
@@ -161,6 +196,7 @@ describe('ConfigurationMessage', () => {
         members: [member],
         admins: [admin],
         encryptionKeyPair: TestUtils.generateFakeECKeyPair(),
+        expireTimer: 0,
       };
 
       expect(() => new ConfigurationMessageClosedGroup(params)).to.throw(
@@ -189,6 +225,7 @@ describe('ConfigurationMessage', () => {
         members: [member],
         admins: [admin],
         encryptionKeyPair: TestUtils.generateFakeECKeyPair(),
+        expireTimer: 0,
       };
 
       expect(() => new ConfigurationMessageClosedGroup(params)).to.throw(

@@ -145,6 +145,7 @@ const getValidClosedGroups = async (convos: Array<ConversationModel>) => {
         members: c.get('members') || [],
         admins: c.get('groupAdmins') || [],
         encryptionKeyPair: ECKeyPair.fromHexKeyPair(fetchEncryptionKeyPair),
+        expireTimer: c.get('expireTimer') || 0,
       });
     })
   );
