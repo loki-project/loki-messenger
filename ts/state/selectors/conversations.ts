@@ -4,14 +4,18 @@ import { StateType } from '../reducer';
 import {
   ConversationLookupType,
   ConversationsStateType,
-  ConversationType,
-  MessageTypeInConvo,
+  ReduxConversationType,
+  SortedMessageModelProps,
 } from '../ducks/conversations';
 
 import { getIntl, getOurNumber } from './user';
 import { BlockedNumberController } from '../../util';
 import { ConversationTypeEnum } from '../../models/conversation';
 import { LocalizerType } from '../../types/Util';
+import {
+  ConversationHeaderProps,
+  ConversationHeaderTitleProps,
+} from '../../components/conversation/ConversationHeader';
 
 export const getConversations = (state: StateType): ConversationsStateType => state.conversations;
 
@@ -31,7 +35,7 @@ export const getSelectedConversationKey = createSelector(
 
 export const getSelectedConversation = createSelector(
   getConversations,
-  (state: ConversationsStateType): ConversationType | undefined => {
+  (state: ConversationsStateType): ReduxConversationType | undefined => {
     return state.selectedConversation
       ? state.conversationLookup[state.selectedConversation]
       : undefined;
@@ -40,16 +44,19 @@ export const getSelectedConversation = createSelector(
 
 export const getOurPrimaryConversation = createSelector(
   getConversations,
-  (state: ConversationsStateType): ConversationType =>
+  (state: ConversationsStateType): ReduxConversationType =>
     state.conversationLookup[window.storage.get('primaryDevicePubKey')]
 );
 
 export const getMessagesOfSelectedConversation = createSelector(
   getConversations,
-  (state: ConversationsStateType): Array<MessageTypeInConvo> => state.messages
+  (state: ConversationsStateType): Array<SortedMessageModelProps> => state.messages
 );
 
-function getConversationTitle(conversation: ConversationType, testingi18n?: LocalizerType): string {
+function getConversationTitle(
+  conversation: ReduxConversationType,
+  testingi18n?: LocalizerType
+): string {
   if (conversation.name) {
     return conversation.name;
   }
@@ -63,7 +70,7 @@ function getConversationTitle(conversation: ConversationType, testingi18n?: Loca
 const collator = new Intl.Collator();
 
 export const _getConversationComparator = (testingi18n?: LocalizerType) => {
-  return (left: ConversationType, right: ConversationType): number => {
+  return (left: ReduxConversationType, right: ReduxConversationType): number => {
     // Pin is the first criteria to check
     if (left.isPinned && !right.isPinned) {
       return -1;
@@ -94,18 +101,18 @@ export const getConversationComparator = createSelector(getIntl, _getConversatio
 // export only because we use it in some of our tests
 export const _getLeftPaneLists = (
   lookup: ConversationLookupType,
-  comparator: (left: ConversationType, right: ConversationType) => number,
+  comparator: (left: ReduxConversationType, right: ReduxConversationType) => number,
   selectedConversation?: string
 ): {
-  conversations: Array<ConversationType>;
-  contacts: Array<ConversationType>;
+  conversations: Array<ReduxConversationType>;
+  contacts: Array<ReduxConversationType>;
   unreadCount: number;
 } => {
   const values = Object.values(lookup);
   const sorted = values.sort(comparator);
 
-  const conversations: Array<ConversationType> = [];
-  const directConversations: Array<ConversationType> = [];
+  const conversations: Array<ReduxConversationType> = [];
+  const directConversations: Array<ReduxConversationType> = [];
 
   let index = 0;
 
@@ -127,8 +134,6 @@ export const _getLeftPaneLists = (
         isBlocked: true,
       };
     }
-
-    // conversation.index = index;
 
     // Add Open Group to list as soon as the name has been set
     if (conversation.isPublic && (!conversation.name || conversation.name === 'Unknown group')) {
@@ -168,35 +173,6 @@ export const _getLeftPaneLists = (
   };
 };
 
-export const _getSessionConversationInfo = (
-  lookup: ConversationLookupType,
-  comparator: (left: ConversationType, right: ConversationType) => number,
-  selectedConversation?: string
-): {
-  conversation: ConversationType | undefined;
-  selectedConversation?: string;
-} => {
-  const values = Object.values(lookup);
-  const sorted = values.sort(comparator);
-
-  let conversation;
-  const max = sorted.length;
-
-  for (let i = 0; i < max; i += 1) {
-    const conv = sorted[i];
-
-    if (conv.id === selectedConversation) {
-      conversation = conv;
-      break;
-    }
-  }
-
-  return {
-    conversation,
-    selectedConversation,
-  };
-};
-
 export const getLeftPaneLists = createSelector(
   getConversationLookup,
   getConversationComparator,
@@ -204,22 +180,77 @@ export const getLeftPaneLists = createSelector(
   _getLeftPaneLists
 );
 
-export const getSessionConversationInfo = createSelector(
-  getConversationLookup,
-  getConversationComparator,
-  getSelectedConversationKey,
-  _getSessionConversationInfo
-);
-
 export const getMe = createSelector(
   [getConversationLookup, getOurNumber],
-  (lookup: ConversationLookupType, ourNumber: string): ConversationType => {
+  (lookup: ConversationLookupType, ourNumber: string): ReduxConversationType => {
     return lookup[ourNumber];
   }
 );
 
+export const getDirectContacts = createSelector(
+  getLeftPaneLists,
+  (state: {
+    conversations: Array<ReduxConversationType>;
+    contacts: Array<ReduxConversationType>;
+    unreadCount: number;
+  }) => state.contacts
+);
+
 export const getUnreadMessageCount = createSelector(getLeftPaneLists, (state): number => {
   return state.unreadCount;
+});
+
+export const getConversationHeaderTitleProps = createSelector(getSelectedConversation, (state):
+  | ConversationHeaderTitleProps
+  | undefined => {
+  if (!state) {
+    return undefined;
+  }
+  return {
+    isKickedFromGroup: state.isKickedFromGroup,
+    phoneNumber: state.phoneNumber,
+    isMe: state.isMe,
+    members: state.members || [],
+    isPublic: state.isPublic,
+    profileName: state.profileName,
+    name: state.name,
+    subscriberCount: state.subscriberCount,
+    isGroup: state.type === 'group',
+  };
+});
+
+export const getConversationHeaderProps = createSelector(getSelectedConversation, (state):
+  | ConversationHeaderProps
+  | undefined => {
+  if (!state) {
+    return undefined;
+  }
+
+  const expirationSettingName = state.expireTimer
+    ? window.Whisper.ExpirationTimerOptions.getName(state.expireTimer || 0)
+    : null;
+
+  return {
+    id: state.id,
+    isPrivate: state.isPrivate,
+    notificationForConvo: state.notificationForConvo,
+    currentNotificationSetting: state.currentNotificationSetting,
+    isBlocked: state.isBlocked,
+    left: state.left,
+    avatarPath: state.avatarPath,
+    expirationSettingName: expirationSettingName,
+    hasNickname: state.hasNickname,
+    weAreAdmin: state.weAreAdmin,
+    isKickedFromGroup: state.isKickedFromGroup,
+    phoneNumber: state.phoneNumber,
+    isMe: state.isMe,
+    members: state.members || [],
+    isPublic: state.isPublic,
+    profileName: state.profileName,
+    name: state.name,
+    subscriberCount: state.subscriberCount,
+    isGroup: state.isGroup,
+  };
 });
 
 export const getNumberOfPinnedConversations = createSelector(getConversations, (state): number => {

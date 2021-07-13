@@ -28,15 +28,18 @@ import { Mention, MentionsInput } from 'react-mentions';
 import { CaptionEditor } from '../../CaptionEditor';
 import { DefaultTheme } from 'styled-components';
 import { getConversationController } from '../../../session/conversations';
-import { ConversationType } from '../../../state/ducks/conversations';
+import { ReduxConversationType } from '../../../state/ducks/conversations';
 import { SessionMemberListItem } from '../SessionMemberListItem';
 import autoBind from 'auto-bind';
 import { SessionSettingCategory } from '../settings/SessionSettings';
 import { getMentionsInput } from '../../../state/selectors/mentionsInput';
 import { updateConfirmModal } from '../../../state/ducks/modalDialog';
-import { SectionType } from '../../../state/ducks/section';
+import {
+  SectionType,
+  showLeftPaneSection,
+  showSettingsSection,
+} from '../../../state/ducks/section';
 import { SessionButtonColor } from '../SessionButton';
-import { SessionConfirmDialogProps } from '../SessionConfirm';
 import {
   createOrUpdateItem,
   getItemById,
@@ -67,9 +70,6 @@ export interface StagedAttachmentType extends AttachmentType {
 
 interface Props {
   sendMessage: any;
-  onMessageSending: any;
-  onMessageSuccess: any;
-  onMessageFailure: any;
 
   onLoadVoiceNoteView: any;
   onExitVoiceNoteView: any;
@@ -78,7 +78,7 @@ interface Props {
   isKickedFromGroup: boolean;
   left: boolean;
   selectedConversationKey: string;
-  selectedConversation: ConversationType | undefined;
+  selectedConversation: ReduxConversationType | undefined;
   isPublic: boolean;
 
   quotedMessageProps?: ReplyingToMessageProps;
@@ -89,8 +89,6 @@ interface Props {
   clearAttachments: () => any;
   removeAttachment: (toRemove: AttachmentType) => void;
   onChoseAttachments: (newAttachments: Array<File>) => void;
-  showLeftPaneSection: (section: SectionType) => void;
-  showSettingsSection: (category: SessionSettingCategory) => void;
   theme: DefaultTheme;
 }
 
@@ -249,7 +247,7 @@ export class SessionCompositionBox extends React.Component<Props, State> {
         (await getItemById(hasLinkPreviewPopupBeenDisplayed))?.value || false;
       window.inboxStore?.dispatch(
         updateConfirmModal({
-          shouldShowConfirm: () =>
+          shouldShowConfirm:
             !window.getSettingValue('link-preview-setting') && !alreadyDisplayedPopup,
           title: window.i18n('linkPreviewsTitle'),
           message: window.i18n('linkPreviewsConfirmMessage'),
@@ -434,6 +432,7 @@ export class SessionCompositionBox extends React.Component<Props, State> {
             <SessionMemberListItem
               isSelected={focused}
               index={index++}
+              key={suggestion.id}
               member={{
                 id: `${suggestion.id}`,
                 authorPhoneNumber: `${suggestion.id}`,
@@ -603,6 +602,9 @@ export class SessionCompositionBox extends React.Component<Props, State> {
                 ...ret.image,
                 url: URL.createObjectURL(blob),
                 fileName: 'preview',
+                fileSize: null,
+                screenshot: null,
+                thumbnail: null,
               };
               image = imageAttachment;
             }
@@ -841,7 +843,6 @@ export class SessionCompositionBox extends React.Component<Props, State> {
     const { stagedLinkPreview } = this.state;
 
     // Send message
-    this.props.onMessageSending();
     const extractedQuotedMessageProps = _.pick(
       quotedMessageProps,
       'id',
@@ -868,8 +869,6 @@ export class SessionCompositionBox extends React.Component<Props, State> {
         {}
       );
 
-      // Message sending sucess
-      this.props.onMessageSuccess();
       this.props.clearAttachments();
 
       // Empty composition box and stagedAttachments
@@ -882,7 +881,6 @@ export class SessionCompositionBox extends React.Component<Props, State> {
     } catch (e) {
       // Message sending failed
       window?.log?.error(e);
-      this.props.onMessageFailure();
     }
   }
 
@@ -946,8 +944,8 @@ export class SessionCompositionBox extends React.Component<Props, State> {
     }
 
     ToastUtils.pushAudioPermissionNeeded(() => {
-      this.props.showLeftPaneSection(SectionType.Settings);
-      this.props.showSettingsSection(SessionSettingCategory.Privacy);
+      window.inboxStore?.dispatch(showLeftPaneSection(SectionType.Settings));
+      window.inboxStore?.dispatch(showSettingsSection(SessionSettingCategory.Privacy));
     });
   }
 

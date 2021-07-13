@@ -29,7 +29,6 @@ import _ from 'lodash';
 import { animation, contextMenu, Item, Menu } from 'react-contexify';
 import uuid from 'uuid';
 import { InView } from 'react-intersection-observer';
-import { withTheme } from 'styled-components';
 import { MessageMetadata } from './message/MessageMetadata';
 import { PubKey } from '../../session/types';
 import { MessageRegularProps } from '../../models/messageType';
@@ -42,6 +41,7 @@ import { MessageInteraction } from '../../interactions';
 import autoBind from 'auto-bind';
 import { AudioPlayerWithEncryptedFile } from './H5AudioPlayer';
 import { ClickToTrustSender } from './message/ClickToTrustSender';
+import { getMessageById } from '../../data/data';
 
 // Same as MIN_WIDTH in ImageGrid.tsx
 const MINIMUM_LINK_PREVIEW_IMAGE_WIDTH = 200;
@@ -55,7 +55,7 @@ interface State {
 const EXPIRATION_CHECK_MINIMUM = 2000;
 const EXPIRED_DELAY = 600;
 
-class MessageInner extends React.PureComponent<MessageRegularProps, State> {
+export class Message extends React.PureComponent<MessageRegularProps, State> {
   public expirationCheckInterval: any;
   public expiredTimeout: any;
   public ctxMenuID: string;
@@ -278,14 +278,7 @@ class MessageInner extends React.PureComponent<MessageRegularProps, State> {
 
   // tslint:disable-next-line cyclomatic-complexity
   public renderPreview() {
-    const {
-      attachments,
-      conversationType,
-      direction,
-      onClickLinkPreview,
-      previews,
-      quote,
-    } = this.props;
+    const { attachments, conversationType, direction, previews, quote } = this.props;
 
     // Attachments take precedence over Link Previews
     if (attachments && attachments.length) {
@@ -315,11 +308,6 @@ class MessageInner extends React.PureComponent<MessageRegularProps, State> {
           'module-message__link-preview',
           withContentAbove ? 'module-message__link-preview--with-content-above' : null
         )}
-        onClick={() => {
-          if (onClickLinkPreview) {
-            onClickLinkPreview(first.url);
-          }
-        }}
       >
         {first.image && previewHasImage && isFullSizeImage ? (
           <ImageGrid
@@ -378,9 +366,11 @@ class MessageInner extends React.PureComponent<MessageRegularProps, State> {
       multiSelectMode,
     } = this.props;
 
-    if (!quote || !quote.authorPhoneNumber) {
+    if (!quote || !quote.authorPhoneNumber || !quote.messageId) {
       return null;
     }
+    const quoteId = _.toNumber(quote.messageId);
+    const { authorPhoneNumber, referencedMessageNotFound } = quote;
 
     const withContentAbove = conversationType === 'group' && direction === 'incoming';
 
@@ -397,8 +387,7 @@ class MessageInner extends React.PureComponent<MessageRegularProps, State> {
             this.props.onSelectMessage(id);
             return;
           }
-          const { authorPhoneNumber, messageId: quoteId, referencedMessageNotFound } = quote;
-          quote?.onClick({
+          void this.props.onQuoteClick?.({
             quoteAuthor: authorPhoneNumber,
             quoteId,
             referencedMessageNotFound,
@@ -526,7 +515,6 @@ class MessageInner extends React.PureComponent<MessageRegularProps, State> {
       onSelectMessage,
       onDeleteMessage,
       onDownload,
-      onRetrySend,
       onShowDetail,
       isPublic,
       isOpenGroupV2,
@@ -582,7 +570,18 @@ class MessageInner extends React.PureComponent<MessageRegularProps, State> {
         </Item>
         <Item onClick={this.onReplyPrivate}>{window.i18n('replyToMessage')}</Item>
         <Item onClick={onShowDetail}>{window.i18n('moreInformation')}</Item>
-        {showRetry ? <Item onClick={onRetrySend}>{window.i18n('resend')}</Item> : null}
+        {showRetry ? (
+          <Item
+            onClick={async () => {
+              const found = await getMessageById(id);
+              if (found) {
+                await found.retrySend();
+              }
+            }}
+          >
+            {window.i18n('resend')}
+          </Item>
+        ) : null}
         {isDeletable ? (
           <>
             <Item
@@ -692,17 +691,7 @@ class MessageInner extends React.PureComponent<MessageRegularProps, State> {
 
   // tslint:disable-next-line: cyclomatic-complexity
   public render() {
-    const {
-      direction,
-      id,
-      selected,
-      multiSelectMode,
-      conversationType,
-      isPublic,
-      text,
-      isUnread,
-      markRead,
-    } = this.props;
+    const { direction, id, selected, multiSelectMode, conversationType, isUnread } = this.props;
     const { expired, expiring } = this.state;
 
     if (expired) {
@@ -728,11 +717,12 @@ class MessageInner extends React.PureComponent<MessageRegularProps, State> {
       divClasses.push('flash-green-once');
     }
 
-    const onVisible = (inView: boolean) => {
+    const onVisible = async (inView: boolean) => {
       if (inView && shouldMarkReadWhenVisible) {
+        const found = await getMessageById(id);
         // mark the message as read.
         // this will trigger the expire timer.
-        void markRead(Date.now());
+        void found?.markRead(Date.now());
       }
     };
 
@@ -810,7 +800,19 @@ class MessageInner extends React.PureComponent<MessageRegularProps, State> {
             {this.renderAttachment()}
             {this.renderPreview()}
             {this.renderText()}
-            <MessageMetadata {...this.props} isShowingImage={this.isShowingImage()} />
+            <MessageMetadata
+              {..._.omit(
+                this.props,
+                'onSelectMessage',
+                'onDeleteMessage',
+                'onReply',
+                'onShowDetail',
+                'onClickAttachment',
+                'onDownload',
+                'onQuoteClick'
+              )}
+              isShowingImage={this.isShowingImage()}
+            />
           </div>
           {this.renderError(!isIncoming)}
           {this.renderContextMenu()}
@@ -883,5 +885,3 @@ class MessageInner extends React.PureComponent<MessageRegularProps, State> {
     await removeSenderFromModerator(this.props.authorPhoneNumber, this.props.convoId);
   }
 }
-
-export const Message = withTheme(MessageInner);

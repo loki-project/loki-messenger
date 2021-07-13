@@ -25,6 +25,7 @@ import {
   unblockConvoById,
 } from '../../../interactions/conversationInteractions';
 import { SessionButtonColor } from '../SessionButton';
+import { getTimerOptions } from '../../../state/selectors/timerOptions';
 import { ToastUtils } from '../../../session/utils';
 
 const maxNumberOfPinnedConversations = 5;
@@ -44,10 +45,6 @@ function showNotificationConvo(
   isBlocked: boolean
 ): boolean {
   return !left && !isKickedFromGroup && !isBlocked;
-}
-
-function showMemberMenu(isPublic: boolean, isGroup: boolean): boolean {
-  return !isPublic && isGroup;
 }
 
 function showBlock(isMe: boolean, isPrivate: boolean): boolean {
@@ -165,6 +162,8 @@ export function getDeleteContactMenuItem(
   isKickedFromGroup: boolean | undefined,
   conversationId: string
 ): JSX.Element | null {
+  const dispatch = useDispatch();
+
   if (
     showDeleteContact(
       Boolean(isMe),
@@ -181,7 +180,6 @@ export function getDeleteContactMenuItem(
       menuItemText = window.i18n('delete');
     }
 
-    const dispatch = useDispatch();
     const onClickClose = () => {
       dispatch(updateConfirmModal(null));
     };
@@ -312,7 +310,6 @@ export function getDisappearingMenuItem(
   isKickedFromGroup: boolean | undefined,
   left: boolean | undefined,
   isBlocked: boolean | undefined,
-  timerOptions: Array<TimerOption>,
   conversationId: string
 ): JSX.Element | null {
   if (
@@ -325,13 +322,15 @@ export function getDisappearingMenuItem(
   ) {
     const isRtlMode = isRtlBody();
 
+    const timerOptions = useSelector(getTimerOptions).timerOptions;
+
     return (
       // Remove the && false to make context menu work with RTL support
       <Submenu
         label={window.i18n('disappearingMessages') as any}
         // rtl={isRtlMode && false}
       >
-        {(timerOptions || []).map(item => (
+        {timerOptions.map(item => (
           <Item
             key={item.value}
             onClick={async () => {

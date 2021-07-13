@@ -11,11 +11,12 @@ import { GroupUtils, UserUtils } from '../session/utils';
 import { fromHexToArray, toHex } from '../session/utils/String';
 import { concatUInt8Array, getSodium } from '../session/crypto';
 import { getConversationController } from '../session/conversations';
-import { getAllEncryptionKeyPairsForGroup } from '../../ts/data/data';
-import { ECKeyPair } from './keypairs';
+import { ECKeyPair, HexKeyPair } from './keypairs';
 import { handleConfigurationMessage } from './configMessage';
 import { ConversationTypeEnum } from '../models/conversation';
 import { removeMessagePadding } from '../session/crypto/BufferPadding';
+import { perfEnd, perfStart } from '../session/utils/Performance';
+import { getAllCachedECKeyPair } from './closedGroups';
 
 export async function handleContentMessage(envelope: EnvelopePlus) {
   try {
@@ -42,7 +43,8 @@ async function decryptForClosedGroup(envelope: EnvelopePlus, ciphertext: ArrayBu
       window?.log?.warn('received medium group message but not for an existing medium group');
       throw new Error('Invalid group public key'); // invalidGroupPublicKey
     }
-    const encryptionKeyPairs = await getAllEncryptionKeyPairsForGroup(hexEncodedGroupPublicKey);
+    const encryptionKeyPairs = await getAllCachedECKeyPair(hexEncodedGroupPublicKey);
+
     const encryptionKeyPairsCount = encryptionKeyPairs?.length;
     if (!encryptionKeyPairs?.length) {
       throw new Error(`No group keypairs for group ${hexEncodedGroupPublicKey}`); // noGroupKeyPair
@@ -300,9 +302,14 @@ export async function innerHandleContentMessage(
   plaintext: ArrayBuffer
 ): Promise<void> {
   try {
-    const content = SignalService.Content.decode(new Uint8Array(plaintext));
+    perfStart(`SignalService.Content.decode-${envelope.id}`);
 
+    const content = SignalService.Content.decode(new Uint8Array(plaintext));
+    perfEnd(`SignalService.Content.decode-${envelope.id}`, 'SignalService.Content.decode');
+
+    perfStart(`isBlocked-${envelope.id}`);
     const blocked = await isBlocked(envelope.source);
+    perfEnd(`isBlocked-${envelope.id}`, 'isBlocked');
     if (blocked) {
       // We want to allow a blocked user message if that's a control message for a known group and the group is not blocked
       if (shouldDropBlockedUserMessage(content)) {
@@ -322,16 +329,24 @@ export async function innerHandleContentMessage(
       if (content.dataMessage.profileKey && content.dataMessage.profileKey.length === 0) {
         content.dataMessage.profileKey = null;
       }
+      perfStart(`handleDataMessage-${envelope.id}`);
       await handleDataMessage(envelope, content.dataMessage);
+      perfEnd(`handleDataMessage-${envelope.id}`, 'handleDataMessage');
       return;
     }
 
     if (content.receiptMessage) {
+      perfStart(`handleReceiptMessage-${envelope.id}`);
+
       await handleReceiptMessage(envelope, content.receiptMessage);
+      perfEnd(`handleReceiptMessage-${envelope.id}`, 'handleReceiptMessage');
       return;
     }
     if (content.typingMessage) {
+      perfStart(`handleTypingMessage-${envelope.id}`);
+
       await handleTypingMessage(envelope, content.typingMessage as SignalService.TypingMessage);
+      perfEnd(`handleTypingMessage-${envelope.id}`, 'handleTypingMessage');
       return;
     }
     if (content.configurationMessage) {
@@ -343,9 +358,15 @@ export async function innerHandleContentMessage(
       return;
     }
     if (content.dataExtractionNotification) {
+      perfStart(`handleDataExtractionNotification-${envelope.id}`);
+
       await handleDataExtractionNotification(
         envelope,
         content.dataExtractionNotification as SignalService.DataExtractionNotification
+      );
+      perfEnd(
+        `handleDataExtractionNotification-${envelope.id}`,
+        'handleDataExtractionNotification'
       );
       return;
     }

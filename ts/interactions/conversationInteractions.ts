@@ -31,12 +31,13 @@ import {
   lastAvatarUploadTimestamp,
   removeAllMessagesInConversation,
 } from '../data/data';
-import { conversationReset } from '../state/ducks/conversations';
+import { conversationReset, SortedMessageModelProps } from '../state/ducks/conversations';
 import { getDecryptedMediaUrl } from '../session/crypto/DecryptedAttachmentsManager';
 import { IMAGE_JPEG } from '../types/MIME';
 import { FSv2 } from '../fileserver';
 import { fromBase64ToArray, toHex } from '../session/utils/String';
 import { SessionButtonColor } from '../components/session/SessionButton';
+import { perfEnd, perfStart } from '../session/utils/Performance';
 
 export const getCompleteUrlForV2ConvoId = async (convoId: string) => {
   if (convoId.match(openGroupV2ConversationIdRegex)) {
@@ -86,9 +87,9 @@ export async function copyPublicKeyByConvoId(convoId: string) {
  * @param convo the conversation to delete from (only v2 opengroups are supported)
  */
 export async function deleteOpenGroupMessages(
-  messages: Array<MessageModel>,
+  messages: Array<SortedMessageModelProps>,
   convo: ConversationModel
-): Promise<Array<MessageModel>> {
+): Promise<Array<string>> {
   if (!convo.isPublic()) {
     throw new Error('cannot delete public message on a non public groups');
   }
@@ -99,14 +100,13 @@ export async function deleteOpenGroupMessages(
     // so logic here is to delete each messages and get which one where not removed
     const validServerIdsToRemove = _.compact(
       messages.map(msg => {
-        const serverId = msg.get('serverId');
-        return serverId;
+        return msg.propsForMessage.serverId;
       })
     );
 
     const validMessageModelsToRemove = _.compact(
       messages.map(msg => {
-        const serverId = msg.get('serverId');
+        const serverId = msg.propsForMessage.serverId;
         if (serverId) {
           return msg;
         }
@@ -124,7 +124,7 @@ export async function deleteOpenGroupMessages(
     // remove only the messages we managed to remove on the server
     if (allMessagesAreDeleted) {
       window?.log?.info('Removed all those serverIds messages successfully');
-      return validMessageModelsToRemove;
+      return validMessageModelsToRemove.map(m => m.propsForMessage.id);
     } else {
       window?.log?.info(
         'failed to remove all those serverIds message. not removing them locally neither'
@@ -254,7 +254,10 @@ export function showRemoveModeratorsByConvoId(conversationId: string) {
 
 export async function markAllReadByConvoId(conversationId: string) {
   const conversation = getConversationController().get(conversationId);
+  perfStart(`markAllReadByConvoId-${conversationId}`);
+
   await conversation.markReadBouncy(Date.now());
+  perfEnd(`markAllReadByConvoId-${conversationId}`, 'markAllReadByConvoId');
 }
 
 export async function setNotificationForConvoId(
@@ -354,7 +357,7 @@ export async function uploadOurAvatar(newAvatarDecrypted?: ArrayBuffer) {
     // this is a reupload. no need to generate a new profileKey
     profileKey = window.textsecure.storage.get('profileKey');
     if (!profileKey) {
-      window.log.warn('our profileKey not found');
+      window.log.info('our profileKey not found');
       return;
     }
     const currentAttachmentPath = ourConvo.getAvatarPath();

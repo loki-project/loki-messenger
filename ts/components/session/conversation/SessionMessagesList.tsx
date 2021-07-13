@@ -10,14 +10,18 @@ import { contextMenu } from 'react-contexify';
 import { AttachmentType } from '../../../types/Attachment';
 import { GroupNotification } from '../../conversation/GroupNotification';
 import { GroupInvitation } from '../../conversation/GroupInvitation';
-import { ConversationType } from '../../../state/ducks/conversations';
+import {
+  fetchMessagesForConversation,
+  ReduxConversationType,
+  SortedMessageModelProps,
+} from '../../../state/ducks/conversations';
 import { SessionLastSeenIndicator } from './SessionLastSeenIndicator';
 import { ToastUtils } from '../../../session/utils';
 import { TypingBubble } from '../../conversation/TypingBubble';
 import { getConversationController } from '../../../session/conversations';
 import { MessageModel } from '../../../models/message';
-import { MessageRegularProps } from '../../../models/messageType';
-import { getMessagesBySentAt } from '../../../data/data';
+import { MessageRegularProps, QuoteClickOptions } from '../../../models/messageType';
+import { getMessageById, getMessagesBySentAt } from '../../../data/data';
 import autoBind from 'auto-bind';
 import { ConversationTypeEnum } from '../../../models/conversation';
 import { DataExtractionNotification } from '../../conversation/DataExtractionNotification';
@@ -25,25 +29,18 @@ import { DataExtractionNotification } from '../../conversation/DataExtractionNot
 interface State {
   showScrollButton: boolean;
   animateQuotedMessageId?: string;
-  nextMessageToPlay: number | null;
+  nextMessageToPlay: number | undefined;
 }
 
 interface Props {
   selectedMessages: Array<string>;
   conversationKey: string;
-  messages: Array<MessageModel>;
-  conversation: ConversationType;
+  messagesProps: Array<SortedMessageModelProps>;
+  conversation: ReduxConversationType;
   ourPrimary: string;
   messageContainerRef: React.RefObject<any>;
   selectMessage: (messageId: string) => void;
   deleteMessage: (messageId: string) => void;
-  fetchMessagesForConversation: ({
-    conversationKey,
-    count,
-  }: {
-    conversationKey: string;
-    count: number;
-  }) => void;
   replyToMessage: (messageId: number) => Promise<void>;
   showMessageDetails: (messageProps: any) => void;
   onClickAttachment: (attachment: any, message: any) => void;
@@ -69,7 +66,7 @@ export class SessionMessagesList extends React.Component<Props, State> {
 
     this.state = {
       showScrollButton: false,
-      nextMessageToPlay: null,
+      nextMessageToPlay: undefined,
     };
     autoBind(this);
 
@@ -94,8 +91,11 @@ export class SessionMessagesList extends React.Component<Props, State> {
 
   public componentDidUpdate(prevProps: Props, _prevState: State) {
     const isSameConvo = prevProps.conversationKey === this.props.conversationKey;
-    const messageLengthChanged = prevProps.messages.length !== this.props.messages.length;
-    if (!isSameConvo || (prevProps.messages.length === 0 && this.props.messages.length !== 0)) {
+    const messageLengthChanged = prevProps.messagesProps.length !== this.props.messagesProps.length;
+    if (
+      !isSameConvo ||
+      (prevProps.messagesProps.length === 0 && this.props.messagesProps.length !== 0)
+    ) {
       // displayed conversation changed. We have a bit of cleaning to do here
       this.scrollOffsetBottomPx = Number.MAX_VALUE;
       this.ignoreScrollEvents = true;
@@ -129,7 +129,7 @@ export class SessionMessagesList extends React.Component<Props, State> {
   }
 
   public render() {
-    const { conversationKey, conversation, messages } = this.props;
+    const { conversationKey, conversation } = this.props;
     const { showScrollButton } = this.state;
 
     let displayedName = null;
@@ -150,16 +150,21 @@ export class SessionMessagesList extends React.Component<Props, State> {
           conversationType={conversation.type}
           displayedName={displayedName}
           isTyping={conversation.isTyping}
+          key="typing-bubble"
         />
 
-        {this.renderMessages(messages)}
+        {this.renderMessages()}
 
-        <SessionScrollButton show={showScrollButton} onClick={this.scrollToBottom} />
+        <SessionScrollButton
+          show={showScrollButton}
+          onClick={this.scrollToBottom}
+          key="scroll-down-button"
+        />
       </div>
     );
   }
 
-  private displayUnreadBannerIndex(messages: Array<MessageModel>) {
+  private displayUnreadBannerIndex(messages: Array<SortedMessageModelProps>) {
     const { conversation } = this.props;
     if (conversation.unreadCount === 0) {
       return -1;
@@ -177,10 +182,13 @@ export class SessionMessagesList extends React.Component<Props, State> {
     // Basically, count the number of incoming messages from the most recent one.
     for (let index = 0; index <= messages.length - 1; index++) {
       const message = messages[index];
-      if (message.attributes.type === 'incoming') {
+      if (message.propsForMessage.direction === 'incoming') {
         incomingMessagesSoFar++;
         // message.attributes.unread is !== undefined if the message is unread.
-        if (message.attributes.unread !== undefined && incomingMessagesSoFar >= unreadCount) {
+        if (
+          message.propsForMessage.isUnread !== undefined &&
+          incomingMessagesSoFar >= unreadCount
+        ) {
           findFirstUnreadIndex = index;
           break;
         }
@@ -194,23 +202,22 @@ export class SessionMessagesList extends React.Component<Props, State> {
     return findFirstUnreadIndex;
   }
 
-  private renderMessages(messages: Array<MessageModel>) {
-    const { conversation, ourPrimary, selectedMessages } = this.props;
+  private renderMessages() {
+    const { selectedMessages, messagesProps } = this.props;
     const multiSelectMode = Boolean(selectedMessages.length);
     let currentMessageIndex = 0;
     let playableMessageIndex = 0;
-    const displayUnreadBannerIndex = this.displayUnreadBannerIndex(messages);
+    const displayUnreadBannerIndex = this.displayUnreadBannerIndex(messagesProps);
 
     return (
       <>
-        {messages.map((message: MessageModel) => {
-          const messageProps = message.propsForMessage;
+        {messagesProps.map((messageProps: SortedMessageModelProps) => {
+          const timerProps = messageProps.propsForTimerNotification;
+          const propsForGroupInvitation = messageProps.propsForGroupInvitation;
+          const propsForDataExtractionNotification =
+            messageProps.propsForDataExtractionNotification;
 
-          const timerProps = message.propsForTimerNotification;
-          const propsForGroupInvitation = message.propsForGroupInvitation;
-          const propsForDataExtractionNotification = message.propsForDataExtractionNotification;
-
-          const groupNotificationProps = message.propsForGroupNotification;
+          const groupNotificationProps = messageProps.propsForGroupNotification;
 
           // IF there are some unread messages
           // AND we found the last read message
@@ -224,88 +231,70 @@ export class SessionMessagesList extends React.Component<Props, State> {
             <SessionLastSeenIndicator
               count={displayUnreadBannerIndex + 1} // count is used for the 118n of the string
               show={showUnreadIndicator}
-              key={`unread-indicator-${message.id}`}
+              key={`unread-indicator-${messageProps.propsForMessage.id}`}
             />
           );
-
           currentMessageIndex = currentMessageIndex + 1;
 
           if (groupNotificationProps) {
             return (
-              <>
-                <GroupNotification {...groupNotificationProps} key={message.id} />
+              <React.Fragment key={messageProps.propsForMessage.id}>
+                <GroupNotification {...groupNotificationProps} />
                 {unreadIndicator}
-              </>
+              </React.Fragment>
             );
           }
 
           if (propsForGroupInvitation) {
             return (
-              <>
-                <GroupInvitation {...propsForGroupInvitation} key={message.id} />
+              <React.Fragment key={messageProps.propsForMessage.id}>
+                <GroupInvitation
+                  {...propsForGroupInvitation}
+                  key={messageProps.propsForMessage.id}
+                />
                 {unreadIndicator}
-              </>
+              </React.Fragment>
             );
           }
 
           if (propsForDataExtractionNotification) {
             return (
-              <>
+              <React.Fragment key={messageProps.propsForMessage.id}>
                 <DataExtractionNotification
                   {...propsForDataExtractionNotification}
-                  key={message.id}
+                  key={messageProps.propsForMessage.id}
                 />
                 {unreadIndicator}
-              </>
+              </React.Fragment>
             );
           }
 
           if (timerProps) {
             return (
-              <>
-                <TimerNotification {...timerProps} key={message.id} />
+              <React.Fragment key={messageProps.propsForMessage.id}>
+                <TimerNotification {...timerProps} key={messageProps.propsForMessage.id} />
                 {unreadIndicator}
-              </>
+              </React.Fragment>
             );
           }
           if (!messageProps) {
             return;
           }
 
-          if (messageProps) {
-            messageProps.nextMessageToPlay = this.state.nextMessageToPlay;
-            messageProps.playableMessageIndex = playableMessageIndex;
-            messageProps.playNextMessage = this.playNextMessage;
-          }
           playableMessageIndex++;
-
-          if (messageProps.conversationType === ConversationTypeEnum.GROUP) {
-            messageProps.weAreAdmin = conversation.groupAdmins?.includes(ourPrimary);
-          }
-          // a message is deletable if
-          // either we sent it,
-          // or the convo is not a public one (in this case, we will only be able to delete for us)
-          // or the convo is public and we are an admin
-          const isDeletable =
-            messageProps.authorPhoneNumber === this.props.ourPrimary ||
-            !conversation.isPublic ||
-            (conversation.isPublic && !!messageProps.weAreAdmin);
-
-          messageProps.isDeletable = isDeletable;
-          messageProps.isAdmin = conversation.groupAdmins?.includes(messageProps.authorPhoneNumber);
 
           // firstMessageOfSeries tells us to render the avatar only for the first message
           // in a series of messages from the same user
           return (
-            <>
+            <React.Fragment key={messageProps.propsForMessage.id}>
               {this.renderMessage(
                 messageProps,
                 messageProps.firstMessageOfSeries,
                 multiSelectMode,
-                message
+                playableMessageIndex
               )}
               {unreadIndicator}
-            </>
+            </React.Fragment>
           );
         })}
       </>
@@ -313,58 +302,77 @@ export class SessionMessagesList extends React.Component<Props, State> {
   }
 
   private renderMessage(
-    messageProps: MessageRegularProps,
+    messageProps: SortedMessageModelProps,
     firstMessageOfSeries: boolean,
     multiSelectMode: boolean,
-    message: MessageModel
+    playableMessageIndex: number
   ) {
-    const selected = !!messageProps?.id && this.props.selectedMessages.includes(messageProps.id);
+    const messageId = messageProps.propsForMessage.id;
 
-    messageProps.selected = selected;
-    messageProps.firstMessageOfSeries = firstMessageOfSeries;
+    const selected =
+      !!messageProps?.propsForMessage.id && this.props.selectedMessages.includes(messageId);
 
-    messageProps.multiSelectMode = multiSelectMode;
-    messageProps.onSelectMessage = this.props.selectMessage;
-    messageProps.onDeleteMessage = this.props.deleteMessage;
-    messageProps.onReply = this.props.replyToMessage;
-    messageProps.onShowDetail = async () => {
-      const messageDetailsProps = await message.getPropsForMessageDetail();
-      this.props.showMessageDetails(messageDetailsProps);
+    const onShowDetail = async () => {
+      const found = await getMessageById(messageId);
+      if (found) {
+        const messageDetailsProps = await found.getPropsForMessageDetail();
+
+        this.props.showMessageDetails(messageDetailsProps);
+      } else {
+        window.log.warn(`Message ${messageId} not found in db`);
+      }
     };
 
-    messageProps.onClickAttachment = (attachment: AttachmentType) => {
-      this.props.onClickAttachment(attachment, messageProps);
+    const onClickAttachment = (attachment: AttachmentType) => {
+      this.props.onClickAttachment(attachment, messageProps.propsForMessage);
     };
-    messageProps.onDownload = (attachment: AttachmentType) => {
+
+    // tslint:disable-next-line: no-async-without-await
+    const onQuoteClick = messageProps.propsForMessage.quote
+      ? this.scrollToQuoteMessage
+      : async () => {};
+
+    const onDownload = (attachment: AttachmentType) => {
+      const messageTimestamp =
+        messageProps.propsForMessage.timestamp ||
+        messageProps.propsForMessage.serverTimestamp ||
+        messageProps.propsForMessage.receivedAt ||
+        0;
       this.props.onDownloadAttachment({
         attachment,
-        messageTimestamp: messageProps.timestamp,
-        messageSender: messageProps.authorPhoneNumber,
+        messageTimestamp,
+        messageSender: messageProps.propsForMessage.authorPhoneNumber,
       });
     };
 
-    messageProps.isQuotedMessageToAnimate = messageProps.id === this.state.animateQuotedMessageId;
+    const regularProps: MessageRegularProps = {
+      ...messageProps.propsForMessage,
+      selected,
+      firstMessageOfSeries,
+      multiSelectMode,
+      isQuotedMessageToAnimate: messageId === this.state.animateQuotedMessageId,
+      nextMessageToPlay: this.state.nextMessageToPlay,
+      playableMessageIndex,
+      onSelectMessage: this.props.selectMessage,
+      onDeleteMessage: this.props.deleteMessage,
+      onReply: this.props.replyToMessage,
+      onShowDetail,
+      onClickAttachment,
+      onDownload,
+      playNextMessage: this.playNextMessage,
+      onQuoteClick,
+    };
 
-    if (messageProps.quote) {
-      messageProps.quote.onClick = (options: {
-        quoteAuthor: string;
-        quoteId: any;
-        referencedMessageNotFound: boolean;
-      }) => {
-        void this.scrollToQuoteMessage(options);
-      };
-    }
-
-    return <Message {...messageProps} key={messageProps.id} />;
+    return <Message {...regularProps} onQuoteClick={onQuoteClick} key={messageId} />;
   }
 
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // ~~~~~~~~~~~~~ MESSAGE HANDLING ~~~~~~~~~~~~~
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   private updateReadMessages() {
-    const { messages, conversationKey } = this.props;
+    const { messagesProps, conversationKey } = this.props;
 
-    if (!messages || messages.length === 0) {
+    if (!messagesProps || messagesProps.length === 0) {
       return;
     }
 
@@ -379,7 +387,7 @@ export class SessionMessagesList extends React.Component<Props, State> {
     }
 
     if (this.getScrollOffsetBottomPx() === 0) {
-      void conversation.markRead(messages[0].attributes.received_at);
+      void conversation.markRead(messagesProps[0].propsForMessage.receivedAt);
     }
   }
 
@@ -388,13 +396,13 @@ export class SessionMessagesList extends React.Component<Props, State> {
    * @param index index of message that just completed
    */
   private readonly playNextMessage = (index: any) => {
-    const { messages } = this.props;
-    let nextIndex: number | null = index - 1;
+    const { messagesProps } = this.props;
+    let nextIndex: number | undefined = index - 1;
 
     // to prevent autoplaying as soon as a message is received.
-    const latestMessagePlayed = index <= 0 || messages.length < index - 1;
+    const latestMessagePlayed = index <= 0 || messagesProps.length < index - 1;
     if (latestMessagePlayed) {
-      nextIndex = null;
+      nextIndex = undefined;
       this.setState({
         nextMessageToPlay: nextIndex,
       });
@@ -402,11 +410,11 @@ export class SessionMessagesList extends React.Component<Props, State> {
     }
 
     // stop auto-playing when the audio messages change author.
-    const prevAuthorNumber = messages[index].propsForMessage.authorPhoneNumber;
-    const nextAuthorNumber = messages[index - 1].propsForMessage.authorPhoneNumber;
+    const prevAuthorNumber = messagesProps[index].propsForMessage.authorPhoneNumber;
+    const nextAuthorNumber = messagesProps[index - 1].propsForMessage.authorPhoneNumber;
     const differentAuthor = prevAuthorNumber !== nextAuthorNumber;
     if (differentAuthor) {
-      nextIndex = null;
+      nextIndex = undefined;
     }
 
     this.setState({
@@ -420,7 +428,7 @@ export class SessionMessagesList extends React.Component<Props, State> {
   private async handleScroll() {
     const messageContainer = this.messageContainerRef?.current;
 
-    const { fetchMessagesForConversation, conversationKey } = this.props;
+    const { conversationKey } = this.props;
     if (!messageContainer) {
       return;
     }
@@ -459,36 +467,37 @@ export class SessionMessagesList extends React.Component<Props, State> {
     const shouldFetchMoreMessages = scrollTop <= Constants.UI.MESSAGE_CONTAINER_BUFFER_OFFSET_PX;
 
     if (shouldFetchMoreMessages) {
-      const { messages } = this.props;
-      const numMessages =
-        this.props.messages.length + Constants.CONVERSATION.DEFAULT_MESSAGE_FETCH_COUNT;
-      const oldLen = messages.length;
-      const previousTopMessage = messages[oldLen - 1]?.id;
+      const { messagesProps } = this.props;
+      const numMessages = messagesProps.length + Constants.CONVERSATION.DEFAULT_MESSAGE_FETCH_COUNT;
+      const oldLen = messagesProps.length;
+      const previousTopMessage = messagesProps[oldLen - 1]?.propsForMessage.id;
 
-      fetchMessagesForConversation({ conversationKey, count: numMessages });
-      if (previousTopMessage && oldLen !== messages.length) {
+      (window.inboxStore?.dispatch as any)(
+        fetchMessagesForConversation({ conversationKey, count: numMessages })
+      );
+      if (previousTopMessage && oldLen !== messagesProps.length) {
         this.scrollToMessage(previousTopMessage);
       }
     }
   }
 
   private scrollToUnread() {
-    const { messages, conversation } = this.props;
+    const { messagesProps, conversation } = this.props;
     if (conversation.unreadCount > 0) {
       let message;
-      if (messages.length > conversation.unreadCount) {
+      if (messagesProps.length > conversation.unreadCount) {
         // if we have enough message to show one more message, show one more to include the unread banner
-        message = messages[conversation.unreadCount - 1];
+        message = messagesProps[conversation.unreadCount - 1];
       } else {
-        message = messages[conversation.unreadCount - 1];
+        message = messagesProps[conversation.unreadCount - 1];
       }
 
       if (message) {
-        this.scrollToMessage(message.id);
+        this.scrollToMessage(message.propsForMessage.id);
       }
     }
 
-    if (this.ignoreScrollEvents && messages.length > 0) {
+    if (this.ignoreScrollEvents && messagesProps.length > 0) {
       this.ignoreScrollEvents = false;
       this.updateReadMessages();
     }
@@ -552,11 +561,20 @@ export class SessionMessagesList extends React.Component<Props, State> {
       return;
     }
     messageContainer.scrollTop = messageContainer.scrollHeight - messageContainer.clientHeight;
-    this.updateReadMessages();
+    const { messagesProps, conversationKey } = this.props;
+
+    if (!messagesProps || messagesProps.length === 0) {
+      return;
+    }
+
+    const conversation = getConversationController().getOrThrow(conversationKey);
+    void conversation.markRead(messagesProps[0].propsForMessage.receivedAt);
   }
 
-  private async scrollToQuoteMessage(options: any = {}) {
+  private async scrollToQuoteMessage(options: QuoteClickOptions) {
     const { quoteAuthor, quoteId, referencedMessageNotFound } = options;
+
+    const { messagesProps } = this.props;
 
     // For simplicity's sake, we show the 'not found' toast no matter what if we were
     //   not able to find the referenced message when the quote was received.
@@ -565,7 +583,7 @@ export class SessionMessagesList extends React.Component<Props, State> {
       return;
     }
     // Look for message in memory first, which would tell us if we could scroll to it
-    const targetMessage = this.props.messages.find(item => {
+    const targetMessage = messagesProps.find(item => {
       const messageAuthor = item.propsForMessage?.authorPhoneNumber;
 
       if (!messageAuthor || quoteAuthor !== messageAuthor) {
@@ -584,9 +602,9 @@ export class SessionMessagesList extends React.Component<Props, State> {
       const collection = await getMessagesBySentAt(quoteId);
       const found = Boolean(
         collection.find((item: MessageModel) => {
-          const messageAuthor = item.propsForMessage?.authorPhoneNumber;
+          const messageAuthor = item.getSource();
 
-          return messageAuthor && quoteAuthor === messageAuthor;
+          return Boolean(messageAuthor && quoteAuthor === messageAuthor);
         })
       );
 
@@ -598,7 +616,7 @@ export class SessionMessagesList extends React.Component<Props, State> {
       return;
     }
 
-    const databaseId = targetMessage.id;
+    const databaseId = targetMessage.propsForMessage.id;
     this.scrollToMessage(databaseId, true);
   }
 
