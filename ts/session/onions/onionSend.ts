@@ -183,7 +183,7 @@ export const sendViaOnion = async (
         maxTimeout: 4000,
         onFailedAttempt: e => {
           window?.log?.warn(
-            `sendViaOnionRetryable attempt #${e.attemptNumber} failed. ${e.retriesLeft} retries left...`
+            `sendViaOnionRetryable attempt #${e.attemptNumber} failed. ${e.retriesLeft} retries left... ${e}`
           );
         },
       }

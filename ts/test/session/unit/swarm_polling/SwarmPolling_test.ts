@@ -74,12 +74,23 @@ describe('SwarmPolling', () => {
       expect(swarmPolling.TEST_getPollingTimeout(fakeConvo)).to.eq(SWARM_POLLING_TIMEOUT.INACTIVE);
     });
 
+    it('returns MOST_ACTIVE for convo with less than 30 seconds old activeAt', () => {
+      const convo = getConversationController().getOrCreate(
+        TestUtils.generateFakePubKeyStr(),
+        ConversationTypeEnum.GROUP
+      );
+      convo.set('active_at', Date.now() - 1000 * 29);
+      expect(swarmPolling.TEST_getPollingTimeout(PubKey.cast(convo.id))).to.eq(
+        SWARM_POLLING_TIMEOUT.MOST_ACTIVE
+      );
+    });
+
     it('returns ACTIVE for convo with less than an hour old activeAt', () => {
       const convo = getConversationController().getOrCreate(
         TestUtils.generateFakePubKeyStr(),
         ConversationTypeEnum.GROUP
       );
-      convo.set('active_at', Date.now() - 3555);
+      convo.set('active_at', Date.now() - 1000 * 3555);
       expect(swarmPolling.TEST_getPollingTimeout(PubKey.cast(convo.id))).to.eq(
         SWARM_POLLING_TIMEOUT.ACTIVE
       );
